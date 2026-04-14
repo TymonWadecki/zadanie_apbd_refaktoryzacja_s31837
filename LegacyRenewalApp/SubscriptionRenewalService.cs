@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace LegacyRenewalApp
 {
@@ -9,13 +10,24 @@ namespace LegacyRenewalApp
         private readonly IBillingGateway _billingGateway;
         private readonly ITaxCalc _taxCalculator;
         private readonly IFeeCalc _feeCalculator;
-        public SubscriptionRenewalService() 
+        
+        private readonly IEnumerable<IDiscountRule> _discountRules;
+
+        public SubscriptionRenewalService()
             : this(
-                new CustomerRepository(), 
-                new SubscriptionPlanRepository(), 
-                new LegacyBillingGatewayAdapater(), 
-                new DefaultTaxCalc(), 
-                new DefaultFeeCalc())
+                new CustomerRepository(),
+                new SubscriptionPlanRepository(),
+                new LegacyBillingGatewayAdapater(),
+                new DefaultTaxCalc(),
+                new DefaultFeeCalc(),
+                new IDiscountRule[] 
+                {
+                    new CustomerSegmentDiscountRule(),
+                    new LoyaltyYearsDiscountRule(),
+                    new TeamSizeDiscountRule(),
+                    new LoyaltyPointsDiscountRule()
+                })
+               
         {
         }
 
@@ -25,13 +37,16 @@ namespace LegacyRenewalApp
             ISubscriptionPlanRepository planRepository,
             IBillingGateway billingGateway,
             ITaxCalc taxCalculator,
-            IFeeCalc feeCalculator)
+            IFeeCalc feeCalculator,
+            IEnumerable<IDiscountRule> discountRules)
+            
         {
             _customerRepository = customerRepository;
             _planRepository = planRepository;
             _billingGateway = billingGateway;
             _taxCalculator = taxCalculator;
             _feeCalculator = feeCalculator;
+            _discountRules = discountRules;
         }
         
         
@@ -88,59 +103,11 @@ namespace LegacyRenewalApp
             decimal discountAmount = 0m;
             string notes = string.Empty;
 
-            if (customer.Segment == "Silver")
+            foreach (var rule in _discountRules)
             {
-                discountAmount += baseAmount * 0.05m;
-                notes += "silver discount; ";
-            }
-            else if (customer.Segment == "Gold")
-            {
-                discountAmount += baseAmount * 0.10m;
-                notes += "gold discount; ";
-            }
-            else if (customer.Segment == "Platinum")
-            {
-                discountAmount += baseAmount * 0.15m;
-                notes += "platinum discount; ";
-            }
-            else if (customer.Segment == "Education" && plan.IsEducationEligible)
-            {
-                discountAmount += baseAmount * 0.20m;
-                notes += "education discount; ";
-            }
-
-            if (customer.YearsWithCompany >= 5)
-            {
-                discountAmount += baseAmount * 0.07m;
-                notes += "long-term loyalty discount; ";
-            }
-            else if (customer.YearsWithCompany >= 2)
-            {
-                discountAmount += baseAmount * 0.03m;
-                notes += "basic loyalty discount; ";
-            }
-
-            if (seatCount >= 50)
-            {
-                discountAmount += baseAmount * 0.12m;
-                notes += "large team discount; ";
-            }
-            else if (seatCount >= 20)
-            {
-                discountAmount += baseAmount * 0.08m;
-                notes += "medium team discount; ";
-            }
-            else if (seatCount >= 10)
-            {
-                discountAmount += baseAmount * 0.04m;
-                notes += "small team discount; ";
-            }
-
-            if (useLoyaltyPoints && customer.LoyaltyPoints > 0)
-            {
-                int pointsToUse = customer.LoyaltyPoints > 200 ? 200 : customer.LoyaltyPoints;
-                discountAmount += pointsToUse;
-                notes += $"loyalty points used: {pointsToUse}; ";
+                var result = rule.Calculate(customer, plan, seatCount, baseAmount, useLoyaltyPoints);
+                discountAmount += result.Amount;
+                notes += result.Note;
             }
 
             decimal subtotalAfterDiscount = baseAmount - discountAmount;
