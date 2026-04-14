@@ -5,6 +5,7 @@ namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private readonly IRenewalValidator _validator;
         private readonly ICustomerRepository _customerRepository;
         private readonly ISubscriptionPlanRepository _planRepository;
         private readonly IBillingGateway _billingGateway;
@@ -26,7 +27,9 @@ namespace LegacyRenewalApp
                     new LoyaltyYearsDiscountRule(),
                     new TeamSizeDiscountRule(),
                     new LoyaltyPointsDiscountRule()
-                })
+                },
+                new DefaultRenewalValidator()
+                )
                
         {
         }
@@ -38,7 +41,10 @@ namespace LegacyRenewalApp
             IBillingGateway billingGateway,
             ITaxCalc taxCalculator,
             IFeeCalc feeCalculator,
-            IEnumerable<IDiscountRule> discountRules)
+            IEnumerable<IDiscountRule> discountRules,
+            IRenewalValidator validator)
+
+        
             
         {
             _customerRepository = customerRepository;
@@ -47,6 +53,7 @@ namespace LegacyRenewalApp
             _taxCalculator = taxCalculator;
             _feeCalculator = feeCalculator;
             _discountRules = discountRules;
+            _validator = validator;
         }
         
         
@@ -66,25 +73,7 @@ namespace LegacyRenewalApp
             bool includePremiumSupport,
             bool useLoyaltyPoints)
         {
-            if (customerId <= 0)
-            {
-                throw new ArgumentException("Customer id must be positive");
-            }
-
-            if (string.IsNullOrWhiteSpace(planCode))
-            {
-                throw new ArgumentException("Plan code is required");
-            }
-
-            if (seatCount <= 0)
-            {
-                throw new ArgumentException("Seat count must be positive");
-            }
-
-            if (string.IsNullOrWhiteSpace(paymentMethod))
-            {
-                throw new ArgumentException("Payment method is required");
-            }
+           _validator.Validate(customerId, planCode, seatCount, paymentMethod);
 
             string normalizedPlanCode = planCode.Trim().ToUpperInvariant();
             string normalizedPaymentMethod = paymentMethod.Trim().ToUpperInvariant();
