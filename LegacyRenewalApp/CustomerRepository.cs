@@ -4,8 +4,9 @@ using System.Threading;
 
 namespace LegacyRenewalApp
 {
-    public class CustomerRepository
+    public class CustomerRepository : ICustomerRepository
     {
+        
         public static readonly Dictionary<int, Customer> Database = new Dictionary<int, Customer>
         {
             { 1, new Customer { Id = 1, FullName = "Anna Kowalska", Email = "anna.kowalska@example.com", Segment = "Standard", Country = "Poland", YearsWithCompany = 1, LoyaltyPoints = 20, IsActive = true } },
@@ -28,4 +29,5 @@ namespace LegacyRenewalApp
             throw new ArgumentException($"Customer with id {customerId} does not exist");
         }
     }
-}
+    }
+

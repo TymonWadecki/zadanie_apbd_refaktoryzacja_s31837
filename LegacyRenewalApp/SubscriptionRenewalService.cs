@@ -4,6 +4,45 @@ namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private readonly ICustomerRepository _customerRepository;
+        private readonly ISubscriptionPlanRepository _planRepository;
+        private readonly IBillingGateway _billingGateway;
+        private readonly ITaxCalc _taxCalculator;
+        private readonly IFeeCalc _feeCalculator;
+        public SubscriptionRenewalService() 
+            : this(
+                new CustomerRepository(), 
+                new SubscriptionPlanRepository(), 
+                new LegacyBillingGatewayAdapater(), 
+                new DefaultTaxCalc(), 
+                new DefaultFeeCalc())
+        {
+        }
+
+        
+        public SubscriptionRenewalService(
+            ICustomerRepository customerRepository,
+            ISubscriptionPlanRepository planRepository,
+            IBillingGateway billingGateway,
+            ITaxCalc taxCalculator,
+            IFeeCalc feeCalculator)
+        {
+            _customerRepository = customerRepository;
+            _planRepository = planRepository;
+            _billingGateway = billingGateway;
+            _taxCalculator = taxCalculator;
+            _feeCalculator = feeCalculator;
+        }
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         public RenewalInvoice CreateRenewalInvoice(
             int customerId,
             string planCode,
@@ -35,11 +74,10 @@ namespace LegacyRenewalApp
             string normalizedPlanCode = planCode.Trim().ToUpperInvariant();
             string normalizedPaymentMethod = paymentMethod.Trim().ToUpperInvariant();
 
-            var customerRepository = new CustomerRepository();
-            var planRepository = new SubscriptionPlanRepository();
+            
 
-            var customer = customerRepository.GetById(customerId);
-            var plan = planRepository.GetByCode(normalizedPlanCode);
+            var customer = _customerRepository.GetById(customerId);
+            var plan = _planRepository.GetByCode(normalizedPlanCode);
 
             if (!customer.IsActive)
             {
@@ -111,72 +149,17 @@ namespace LegacyRenewalApp
                 subtotalAfterDiscount = 300m;
                 notes += "minimum discounted subtotal applied; ";
             }
-
-            decimal supportFee = 0m;
-            if (includePremiumSupport)
-            {
-                if (normalizedPlanCode == "START")
-                {
-                    supportFee = 250m;
-                }
-                else if (normalizedPlanCode == "PRO")
-                {
-                    supportFee = 400m;
-                }
-                else if (normalizedPlanCode == "ENTERPRISE")
-                {
-                    supportFee = 700m;
-                }
-
-                notes += "premium support included; ";
-            }
-
-            decimal paymentFee = 0m;
-            if (normalizedPaymentMethod == "CARD")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
-                notes += "card payment fee; ";
-            }
-            else if (normalizedPaymentMethod == "BANK_TRANSFER")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.01m;
-                notes += "bank transfer fee; ";
-            }
-            else if (normalizedPaymentMethod == "PAYPAL")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.035m;
-                notes += "paypal fee; ";
-            }
-            else if (normalizedPaymentMethod == "INVOICE")
-            {
-                paymentFee = 0m;
-                notes += "invoice payment; ";
-            }
-            else
-            {
-                throw new ArgumentException("Unsupported payment method");
-            }
-
-            decimal taxRate = 0.20m;
-            if (customer.Country == "Poland")
-            {
-                taxRate = 0.23m;
-            }
-            else if (customer.Country == "Germany")
-            {
-                taxRate = 0.19m;
-            }
-            else if (customer.Country == "Czech Republic")
-            {
-                taxRate = 0.21m;
-            }
-            else if (customer.Country == "Norway")
-            {
-                taxRate = 0.25m;
-            }
-
+            //wdrozenie zmain 
+            var supportResult = _feeCalculator.CalculateSuppFee(includePremiumSupport, normalizedPlanCode);
+            decimal supportFee = supportResult.Amount;
+            notes += supportResult.Note;
+            
+            var paymentResult = _feeCalculator.CalculatePaymentFee(normalizedPaymentMethod, subtotalAfterDiscount + supportFee);
+            decimal paymentFee = paymentResult.Amount;
+            notes += paymentResult.Note;
+            
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
-            decimal taxAmount = taxBase * taxRate;
+            decimal taxAmount = _taxCalculator.CalculateTaxAmount(customer.Country,taxBase);
             decimal finalAmount = taxBase + taxAmount;
 
             if (finalAmount < 500m)
@@ -202,7 +185,7 @@ namespace LegacyRenewalApp
                 GeneratedAt = DateTime.UtcNow
             };
 
-            LegacyBillingGateway.SaveInvoice(invoice);
+            _billingGateway.SaveInvoice(invoice);
 
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
@@ -211,10 +194,12 @@ namespace LegacyRenewalApp
                     $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
                     $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
 
-                LegacyBillingGateway.SendEmail(customer.Email, subject, body);
+                _billingGateway.SendEmail(customer.Email, subject, body);
             }
 
             return invoice;
         }
     }
+
+    
 }
